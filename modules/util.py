@@ -92,7 +92,7 @@ def hyst_mask(img, high=0.8, low=0.2, sigma=3):
     return mask
 
 
-def series_derivate(series, mask=False, sigma=4, kernel_size=3,  sd_area=50, sd_tolerance=False, left_w=1, space_w=0, right_w=1, output_path=False):
+def series_derivate(series, mask=None, sigma=4, kernel_size=3,  sd_area=50, sd_tolerance=False, left_w=1, space_w=0, right_w=1, output_path=False):
     """ Calculation of derivative image series (difference between two windows of interes).
 
     """
@@ -111,11 +111,10 @@ def series_derivate(series, mask=False, sigma=4, kernel_size=3,  sd_area=50, sd_
 
         der_frame = (der_frame-np.min(der_frame))/(np.max(der_frame)-np.min(der_frame))
 
-        # if not mask:
-        #     der_series.append(der_frame)
-        # else:
-        #
-        der_series.append(ma.masked_where(~mask, der_frame))
+        if mask is None:
+            der_series.append(der_frame)
+        else:
+            der_series.append(ma.masked_where(~mask, der_frame))
 
     logging.info(f'Series len={len(series)}, der. series len={len(der_series)} (left WOI={left_w}, spacer={space_w}, right WOI={right_w})')
 

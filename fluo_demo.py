@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.patches as mpatches
 
 sys.path.append('modules')
 import util as u
@@ -43,6 +44,13 @@ if not os.path.exists(res_path):
 
 
 img_series = tifffile.imread(f'{data_path}/DiffHold_435nm_1.tif')
+print(np.shape(img_series))
+img_series = img_series[:, 100:, :400]
+
+
+
+
+
 
 # create img for mask building
 img = img_series[0]
@@ -51,14 +59,19 @@ vnorm = np.vectorize(norm)
 img_norm = filters.rank.median(vnorm(img, np.min(img), np.max(img)), morphology.disk(5)) 
 
 # create mask
-markers = exposure.adjust_log(img_norm, 1.4) #  filters.rank.entropy(img_norm, morphology.disk(12))
+markers = exposure.adjust_log(img_norm, 1.2) #  filters.rank.entropy(img_norm, morphology.disk(12))  # 
 th_neuron = filters.threshold_otsu(markers)
-mask = morphology.closing(markers > th_neuron, morphology.square(3))
+mask = morphology.closing(markers > th_neuron, morphology.square(1))
+
+# fig, ax = plt.subplots(figsize=(10,10))
+# ax.imshow(mask, cmap='magma')
+# plt.show()
 
 # get mask for largest element only
-element_lab, element_num = measure.label(mask, return_num=True)
-element_area = {np.sum(element_lab[element_lab == i] / i): i for i in range(1, element_num)}
-neuron_mask = element_lab == element_area[max(element_area.keys())]
+element_label = measure.label(mask)
+element_props = measure.regionprops(element_label)
+element_area = {element.area : element.label  for element in element_props}
+neuron_mask = element_label == element_area[max(element_area.keys())]
 
 # sctive spines detection
 der_series = u.series_derivate(img_series,
@@ -68,18 +81,25 @@ der_series = u.series_derivate(img_series,
 der_std = ma.masked_where(~neuron_mask, np.std(der_series, axis=0))
 th_spine = filters.threshold_minimum(der_std)
 spine_mask = der_std > th_spine
+spine_label = measure.label(spine_mask)
+spine_props = measure.regionprops(spine_label, intensity_image=der_std)
 
-spine_overlay = label2rgb(measure.label(spine_mask), image=markers, bg_label=0)
+spine_overlay = label2rgb(spine_label, image=markers, bg_label=0)
 
 
 fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10,10), sharex=True, sharey=True)
 ax = axes.ravel()
 ax[0].imshow(img_norm, cmap='magma')
-ax[1].imshow(element_lab, cmap='nipy_spectral')
+ax[1].imshow(element_label, cmap='nipy_spectral')
 ax[2].imshow(der_std, cmap='jet')
 ax[3].imshow(spine_overlay, cmap='nipy_spectral')
 
-for a in ax:
-    a.axis('off')
+for region in spine_props:
+    minr, minc, maxr, maxc = region.bbox
+    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=2)
+    ax[0].add_patch(rect)
+
+# for a in ax:
+#     a.axis('off')
 plt.tight_layout()
 plt.show()
