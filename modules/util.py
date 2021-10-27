@@ -111,10 +111,11 @@ def series_derivate(series, mask=False, sigma=4, kernel_size=3,  sd_area=50, sd_
 
         der_frame = (der_frame-np.min(der_frame))/(np.max(der_frame)-np.min(der_frame))
 
-        if mask.any():
-            der_series.append(ma.masked_where(~mask, der_frame))
-        else:
-            der_series.append(der_frame)    
+        # if not mask:
+        #     der_series.append(der_frame)
+        # else:
+        #
+        der_series.append(ma.masked_where(~mask, der_frame))
 
     logging.info(f'Series len={len(series)}, der. series len={len(der_series)} (left WOI={left_w}, spacer={space_w}, right WOI={right_w})')
 
