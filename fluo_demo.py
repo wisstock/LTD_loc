@@ -45,12 +45,7 @@ if not os.path.exists(res_path):
 
 img_series = tifffile.imread(f'{data_path}/DiffHold_435nm_1.tif')
 print(np.shape(img_series))
-img_series = img_series[:, 100:, :400]
-
-
-
-
-
+img_series = img_series[:, 250:370, 80:200]
 
 # create img for mask building
 img = img_series[0]
@@ -78,28 +73,39 @@ der_series = u.series_derivate(img_series,
                                mask=neuron_mask,
                                sigma=2, kernel_size=20,
                                left_w=5, space_w=10, right_w=5)
-der_std = ma.masked_where(~neuron_mask, np.std(der_series, axis=0))
+der_std = ma.masked_where(~neuron_mask, np.std(der_series, axis=0))  # final derivate SD image
 th_spine = filters.threshold_minimum(der_std)
 spine_mask = der_std > th_spine
 spine_label = measure.label(spine_mask)
 spine_props = measure.regionprops(spine_label, intensity_image=der_std)
+spine_overlay = label2rgb(spine_label, image=markers, bg_label=0, alpha=0.4)
 
-spine_overlay = label2rgb(spine_label, image=markers, bg_label=0)
 
-
-fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10,10), sharex=True, sharey=True)
+fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10,10), sharex=True, sharey=True)
 ax = axes.ravel()
 ax[0].imshow(img_norm, cmap='magma')
-ax[1].imshow(element_label, cmap='nipy_spectral')
-ax[2].imshow(der_std, cmap='jet')
-ax[3].imshow(spine_overlay, cmap='nipy_spectral')
+ax[1].imshow(der_std, cmap='jet')
+ax[2].imshow(spine_overlay, cmap='nipy_spectral')
+# ax[3].plot()
 
 for region in spine_props:
+    spine_coord = (region.centroid[1], region.centroid[0])  # spine_mask.shape[0] - 
+    print(spine_coord)
     minr, minc, maxr, maxc = region.bbox
-    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=2)
+    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
     ax[0].add_patch(rect)
+    # ax[0].scatter(spine_coord[0], spine_coord[1], color='white')
+    ax[0].annotate(region.label, xy=(spine_coord[0], minr),  xycoords='data', textcoords='data', color='white',
+                   xytext=(spine_coord[0], spine_coord[1]-20),
+                   arrowprops=dict(width=2, headwidth=5, headlength=10, facecolor='white', shrink=0.01))
 
-# for a in ax:
-#     a.axis('off')
+    # spine_mask_ind = spine_mask == region.label
+    # spine_series = []
+    # for img in img_series:
+    #     spine_series.append(np.mean(ma.masked_where(~spine_mask_ind, img)))
+    # ax[3].plot(spine_series)
+
+for a in ax:
+    a.axis('off')
 plt.tight_layout()
 plt.show()
