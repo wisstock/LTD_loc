@@ -18,7 +18,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from skimage.external import tifffile
+import tifffile
+
 from skimage import filters
 from skimage import measure
 from skimage import segmentation

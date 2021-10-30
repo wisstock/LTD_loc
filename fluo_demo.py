@@ -12,10 +12,13 @@ import numpy as np
 import numpy.ma as ma
 import pandas as pd
 
+from scipy.ndimage import distance_transform_edt
+
 from skimage import measure
 from skimage import filters
 from skimage import morphology
 from skimage import exposure
+from skimage import segmentation
 from skimage.color import label2rgb
 
 import tifffile
@@ -35,38 +38,39 @@ FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message
 logging.basicConfig(level=logging.INFO,
                     format=FORMAT)
 
-
 data_path = os.path.join(sys.path[0], 'data')
 res_path = os.path.join(sys.path[0], 'results')
-
 if not os.path.exists(res_path):
     os.makedirs(res_path)
 
 
-img_series = tifffile.imread(f'{data_path}/DiffHold_435nm_1.tif')
+img_series = tifffile.imread(f'{data_path}/corr.tif')  # DiffHold_435nm_1
 print(np.shape(img_series))
-img_series = img_series[:, 250:370, 80:200]
+# img_series = img_series[:, 250:370, 80:200]
 
 # create img for mask building
-img = img_series[0]
-norm = lambda f, f_min, f_max: (f-f_min)/(f_max - f_min)
-vnorm = np.vectorize(norm)
-img_norm = filters.rank.median(vnorm(img, np.min(img), np.max(img)), morphology.disk(5)) 
+# img = img_series[0]
+# norm = lambda f, f_min, f_max: (f-f_min)/(f_max - f_min)
+# vnorm = np.vectorize(norm)
+img_norm = filters.rank.median(img_series[0], morphology.disk(5)) 
 
-# create mask
-markers = exposure.adjust_log(img_norm, 1.2) #  filters.rank.entropy(img_norm, morphology.disk(12))  # 
+# create mask for nucleus area
+nucleus_mask = img_norm < np.max(img_norm)*0.95  # mask bright nucleus area
+distances, _ = distance_transform_edt(nucleus_mask, return_indices=True)
+expand_nucleus_mask = distances <= 80  # extend nucleus mask
+
+# create mask bright areas
+# markers = exposure.adjust_log(img_norm, 1) #  filters.rank.entropy(img_norm, morphology.disk(12))  # 
+markers = filters.rank.entropy(img_norm, morphology.disk(8))
 th_neuron = filters.threshold_otsu(markers)
 mask = morphology.closing(markers > th_neuron, morphology.square(1))
-
-# fig, ax = plt.subplots(figsize=(10,10))
-# ax.imshow(mask, cmap='magma')
-# plt.show()
 
 # get mask for largest element only
 element_label = measure.label(mask)
 element_props = measure.regionprops(element_label)
 element_area = {element.area : element.label  for element in element_props}
 neuron_mask = element_label == element_area[max(element_area.keys())]
+neuron_mask[expand_nucleus_mask] = 0
 
 # sctive spines detection
 der_series = u.series_derivate(img_series,
@@ -78,34 +82,46 @@ th_spine = filters.threshold_minimum(der_std)
 spine_mask = der_std > th_spine
 spine_label = measure.label(spine_mask)
 spine_props = measure.regionprops(spine_label, intensity_image=der_std)
-spine_overlay = label2rgb(spine_label, image=markers, bg_label=0, alpha=0.4)
+spine_overlay = label2rgb(neuron_mask, image=spine_label, bg_label=0, alpha=0.4)
+
+# fig, ax = plt.subplots(figsize=(10,10))
+# ax.imshow(spine_mask)  # , alpha=0.5)
+# # ax.imshow(neuron_mask, cmap='magma', alpha=0.5)
+# plt.show()
 
 
-fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(10,10), sharex=True, sharey=True)
-ax = axes.ravel()
-ax[0].imshow(img_norm, cmap='magma')
-ax[1].imshow(der_std, cmap='jet')
-ax[2].imshow(spine_overlay, cmap='nipy_spectral')
-# ax[3].plot()
+
+
+plt.figure(figsize=(20,10))
+# fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(10,10), sharex=True, sharey=True)
+# ax = axes.ravel()
+ax0 = plt.subplot(231)
+ax0.imshow(img_norm, cmap='magma')
+ax0.axis('off')
+ax1 = plt.subplot(232)
+ax1.imshow(der_std, cmap='jet')
+ax1.axis('off')
+ax2 = plt.subplot(233)
+ax2.imshow(neuron_mask, cmap='nipy_spectral')
+ax2.axis('off')
+ax3 = plt.subplot(212)
 
 for region in spine_props:
     spine_coord = (region.centroid[1], region.centroid[0])  # spine_mask.shape[0] - 
     print(spine_coord)
     minr, minc, maxr, maxc = region.bbox
     rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
-    ax[0].add_patch(rect)
+    ax0.add_patch(rect)
     # ax[0].scatter(spine_coord[0], spine_coord[1], color='white')
-    ax[0].annotate(region.label, xy=(spine_coord[0], minr),  xycoords='data', textcoords='data', color='white',
+    ax0.annotate(region.label, xy=(spine_coord[0], minr),  xycoords='data', textcoords='data', color='white',
                    xytext=(spine_coord[0], spine_coord[1]-20),
                    arrowprops=dict(width=2, headwidth=5, headlength=10, facecolor='white', shrink=0.01))
 
-    # spine_mask_ind = spine_mask == region.label
-    # spine_series = []
-    # for img in img_series:
-    #     spine_series.append(np.mean(ma.masked_where(~spine_mask_ind, img)))
-    # ax[3].plot(spine_series)
+    region_mask = spine_label == region.label
+    region_mask = region_mask != 0
+    spine_series_slice = [np.mean(ma.masked_where(~region_mask, frame)) for frame in img_series]
+    ax3.plot(spine_series_slice, label=region.label)
 
-for a in ax:
-    a.axis('off')
+plt.legend()
 plt.tight_layout()
 plt.show()
