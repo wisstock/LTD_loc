@@ -57,7 +57,7 @@ img_norm = filters.rank.median(img_series[0], morphology.disk(5))
 # create mask for nucleus area
 nucleus_mask = img_norm < np.max(img_norm)*0.95  # mask bright nucleus area
 distances, _ = distance_transform_edt(nucleus_mask, return_indices=True)
-expand_nucleus_mask = distances <= 80  # extend nucleus mask
+expand_nucleus_mask = distances <= 15  # extend nucleus mask
 
 # create mask bright areas
 # markers = exposure.adjust_log(img_norm, 1) #  filters.rank.entropy(img_norm, morphology.disk(12))  # 
@@ -78,15 +78,19 @@ der_series = u.series_derivate(img_series,
                                sigma=2, kernel_size=20,
                                left_w=5, space_w=10, right_w=5)
 der_std = ma.masked_where(~neuron_mask, np.std(der_series, axis=0))  # final derivate SD image
-th_spine = filters.threshold_minimum(der_std)
+th_spine = filters.threshold_yen(der_std)
 spine_mask = der_std > th_spine
-spine_label = measure.label(spine_mask)
+
+spine_label, spine_num = measure.label(spine_mask, return_num=True)
+logging.info(f'{spine_num} spine regions finded')
+spine_label = ma.masked_where(~neuron_mask, spine_label)
+
 spine_props = measure.regionprops(spine_label, intensity_image=der_std)
-spine_overlay = label2rgb(neuron_mask, image=spine_label, bg_label=0, alpha=0.4)
+spine_overlay = label2rgb(spine_label, image=img_norm, bg_label=0, alpha=0.4)
 
 # fig, ax = plt.subplots(figsize=(10,10))
-# ax.imshow(spine_mask)  # , alpha=0.5)
-# # ax.imshow(neuron_mask, cmap='magma', alpha=0.5)
+# ax.imshow(spine_label, cmap='jet')
+# # ax.imshow(der_std, cmap='magma', alpha=0.5)
 # plt.show()
 
 
@@ -102,12 +106,15 @@ ax1 = plt.subplot(232)
 ax1.imshow(der_std, cmap='jet')
 ax1.axis('off')
 ax2 = plt.subplot(233)
-ax2.imshow(neuron_mask, cmap='nipy_spectral')
+ax2.imshow(spine_overlay)
 ax2.axis('off')
 ax3 = plt.subplot(212)
 
 for region in spine_props:
     spine_coord = (region.centroid[1], region.centroid[0])  # spine_mask.shape[0] - 
+    if spine_coord[0] is None:
+        logging.warning('Spine region with incorrect properties!')
+        continue
     print(spine_coord)
     minr, minc, maxr, maxc = region.bbox
     rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
